@@ -1,0 +1,20 @@
+.vscode/*
+.DS_Store
+
+# Python/Environment
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+env/
+
+# Database
+pulse.db
+*.sqlite3
+*.db
+
+# Extracted & Temporary Files
+Insights_extracted/
+Insights.zip
+india_states.geojson
