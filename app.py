@@ -4,6 +4,9 @@ import sqlite3
 import plotly.express as px
 import plotly.graph_objects as go
 import json
+import os
+
+BASE = os.path.dirname(os.path.abspath(__file__))
 
 # Setup Page Configuration
 st.set_page_config(page_title="PhonePe Pulse Reimagined", layout="wide", initial_sidebar_state="expanded")
@@ -31,7 +34,7 @@ st.markdown("""
 @st.cache_data
 def load_geojson():
     try:
-        with open("c:/Users/rasta/Desktop/pulse/india_states.geojson", "r") as f:
+        with open(os.path.join(BASE, "india_states.geojson"), "r") as f:
             return json.load(f)
     except Exception as e:
         st.warning("GeoJSON for maps not found. Map visuals will be limited.")
@@ -42,7 +45,7 @@ india_geojson = load_geojson()
 # Database Connection
 @st.cache_resource
 def get_connection():
-    return sqlite3.connect("c:/Users/rasta/Desktop/pulse/pulse.db", check_same_thread=False)
+    return sqlite3.connect(os.path.join(BASE, "pulse.db"), check_same_thread=False)
 
 conn = get_connection()
 

@@ -4,8 +4,9 @@ import sqlite3
 import pandas as pd
 
 # Define paths
-DATA_DIR = "c:/Users/rasta/Desktop/pulse/data"
-DB_PATH = "c:/Users/rasta/Desktop/pulse/pulse.db"
+BASE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE, "data")
+DB_PATH = os.path.join(BASE, "pulse.db")
 
 # Establish DB connection
 conn = sqlite3.connect(DB_PATH)
