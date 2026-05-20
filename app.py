@@ -64,6 +64,9 @@ state_mapping = {
     'tripura': 'Tripura', 'uttar-pradesh': 'Uttar Pradesh', 'uttarakhand': 'Uttarakhand', 'west-bengal': 'West Bengal'
 }
 
+# Reverse mapping: display name -> slug (used for district queries)
+reverse_state_mapping = {v: k for k, v in state_mapping.items()}
+
 # Queries Generator
 def fetch_data(query, conn):
     try:
@@ -87,7 +90,7 @@ selected_quarter = st.sidebar.selectbox("Select Quarter", [1, 2, 3, 4])
 
 st.title(f"PhonePe Pulse - {domain} ({selected_year} Q{selected_quarter})")
 
-# Main Content Logic
+# ── TRANSACTIONS ──────────────────────────────────────────────────────────────
 if domain == "Transactions":
     # 1. Total Metrics
     agg_query = f"SELECT SUM(Transaction_count) as Total_Count, SUM(Transaction_amount) as Total_Amount FROM Aggregated_transaction WHERE Year={selected_year} AND Quarter={selected_quarter}"
@@ -103,8 +106,8 @@ if domain == "Transactions":
 
     st.markdown("---")
     
-    # 2. Map View
-    st.subheader(f"Geographical Transactions Breakdown")
+    # 2. State-wise Map View
+    st.subheader("Geographical Transactions Breakdown — State Level")
     map_query = f"SELECT State, SUM(Transaction_amount) as amount FROM Map_transaction WHERE Year={selected_year} AND Quarter={selected_quarter} GROUP BY State"
     map_df = fetch_data(map_query, conn)
     
@@ -123,7 +126,7 @@ if domain == "Transactions":
         fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0})
         st.plotly_chart(fig, use_container_width=True)
 
-    # 3. Top Performers
+    # 3. Top 10 Districts (across all states)
     st.markdown("---")
     st.subheader("Top 10 Performing Districts")
     top_dist_query = f"SELECT EntityName, SUM(Count) as Total_Count, SUM(Amount) as Total_Amount FROM Top_transaction WHERE EntityType='District' AND Year={selected_year} AND Quarter={selected_quarter} GROUP BY EntityName ORDER BY Total_Amount DESC LIMIT 10"
@@ -134,7 +137,7 @@ if domain == "Transactions":
         fig2.update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig2, use_container_width=True)
 
-    # 4. Categories
+    # 4. Transaction Categories
     st.subheader("Transaction Categories")
     cat_query = f"SELECT Transaction_type, SUM(Transaction_amount) as amount FROM Aggregated_transaction WHERE Year={selected_year} AND Quarter={selected_quarter} GROUP BY Transaction_type"
     cat_df = fetch_data(cat_query, conn)
@@ -142,6 +145,50 @@ if domain == "Transactions":
         fig_pie = px.pie(cat_df, values='amount', names='Transaction_type', title='Transaction Amount by Category', hole=0.5, color_discrete_sequence=px.colors.sequential.Purp)
         st.plotly_chart(fig_pie, use_container_width=True)
 
+    # 5. District-wise Breakdown by State
+    st.markdown("---")
+    st.subheader("District-wise Breakdown by State")
+
+    states_df = fetch_data(f"SELECT DISTINCT State FROM Map_transaction WHERE Year={selected_year} AND Quarter={selected_quarter} ORDER BY State", conn)
+    if not states_df.empty:
+        state_display_names = sorted([state_mapping.get(s, s) for s in states_df['State'].tolist()])
+        selected_display_state = st.selectbox("Select a State to view District breakdown", state_display_names, key="txn_state")
+        selected_slug = reverse_state_mapping.get(selected_display_state, selected_display_state)
+
+        dist_query = f"""
+            SELECT District, SUM(Transaction_count) as Total_Count, SUM(Transaction_amount) as Total_Amount
+            FROM Map_transaction
+            WHERE Year={selected_year} AND Quarter={selected_quarter} AND State='{selected_slug}'
+            GROUP BY District ORDER BY Total_Amount DESC
+        """
+        dist_df = fetch_data(dist_query, conn)
+
+        if not dist_df.empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Districts Covered", len(dist_df))
+            with col2:
+                st.metric("Top District", dist_df['District'].iloc[0])
+
+            fig_dist = px.bar(
+                dist_df, x='District', y='Total_Amount',
+                title=f'District-wise Transaction Amount — {selected_display_state} ({selected_year} Q{selected_quarter})',
+                color='Total_Amount', color_continuous_scale='Purples'
+            )
+            fig_dist.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_dist, use_container_width=True)
+
+            fig_dist2 = px.bar(
+                dist_df, x='District', y='Total_Count',
+                title=f'District-wise Transaction Count — {selected_display_state} ({selected_year} Q{selected_quarter})',
+                color='Total_Count', color_continuous_scale='Purples'
+            )
+            fig_dist2.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_dist2, use_container_width=True)
+        else:
+            st.info("No district data available for the selected state and period.")
+
+# ── USERS ─────────────────────────────────────────────────────────────────────
 elif domain == "Users":
     # 1. Total Metrics
     agg_query = f"SELECT SUM(Registered_users) as Total_Users, SUM(App_opens) as Total_Opens FROM Map_user WHERE Year={selected_year} AND Quarter={selected_quarter}"
@@ -157,8 +204,8 @@ elif domain == "Users":
 
     st.markdown("---")
 
-    # 2. Map View
-    st.subheader(f"Geographical User Distribution")
+    # 2. State-wise Map View
+    st.subheader("Geographical User Distribution — State Level")
     map_query = f"SELECT State, SUM(Registered_users) as users FROM Map_user WHERE Year={selected_year} AND Quarter={selected_quarter} GROUP BY State"
     map_df = fetch_data(map_query, conn)
     
@@ -177,7 +224,7 @@ elif domain == "Users":
         fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0})
         st.plotly_chart(fig, use_container_width=True)
 
-    # 3. Top Brands
+    # 3. Top Device Brands
     st.markdown("---")
     st.subheader("Top Device Brands")
     brands_query = f"SELECT Brand, SUM(Count) as Total_Count FROM Aggregated_user WHERE Year={selected_year} AND Quarter={selected_quarter} GROUP BY Brand ORDER BY Total_Count DESC LIMIT 10"
@@ -187,6 +234,50 @@ elif domain == "Users":
         fig_brand = px.bar(brands_df, x='Brand', y='Total_Count', title='Top Brands used by Users', color='Total_Count', color_continuous_scale="Blues")
         st.plotly_chart(fig_brand, use_container_width=True)
 
+    # 4. District-wise Breakdown by State
+    st.markdown("---")
+    st.subheader("District-wise User Breakdown by State")
+
+    states_df_u = fetch_data(f"SELECT DISTINCT State FROM Map_user WHERE Year={selected_year} AND Quarter={selected_quarter} ORDER BY State", conn)
+    if not states_df_u.empty:
+        state_display_names_u = sorted([state_mapping.get(s, s) for s in states_df_u['State'].tolist()])
+        selected_display_state_u = st.selectbox("Select a State to view District breakdown", state_display_names_u, key="usr_state")
+        selected_slug_u = reverse_state_mapping.get(selected_display_state_u, selected_display_state_u)
+
+        dist_query_u = f"""
+            SELECT District, SUM(Registered_users) as Total_Users, SUM(App_opens) as Total_Opens
+            FROM Map_user
+            WHERE Year={selected_year} AND Quarter={selected_quarter} AND State='{selected_slug_u}'
+            GROUP BY District ORDER BY Total_Users DESC
+        """
+        dist_df_u = fetch_data(dist_query_u, conn)
+
+        if not dist_df_u.empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Districts Covered", len(dist_df_u))
+            with col2:
+                st.metric("Top District", dist_df_u['District'].iloc[0])
+
+            fig_dist_u = px.bar(
+                dist_df_u, x='District', y='Total_Users',
+                title=f'District-wise Registered Users — {selected_display_state_u} ({selected_year} Q{selected_quarter})',
+                color='Total_Users', color_continuous_scale='Blues'
+            )
+            fig_dist_u.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_dist_u, use_container_width=True)
+
+            fig_dist_u2 = px.bar(
+                dist_df_u, x='District', y='Total_Opens',
+                title=f'District-wise App Opens — {selected_display_state_u} ({selected_year} Q{selected_quarter})',
+                color='Total_Opens', color_continuous_scale='Blues'
+            )
+            fig_dist_u2.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_dist_u2, use_container_width=True)
+        else:
+            st.info("No district data available for the selected state and period.")
+
+# ── INSURANCE ─────────────────────────────────────────────────────────────────
 elif domain == "Insurance":
     # 1. Total Metrics
     agg_query = f"SELECT SUM(Insurance_count) as Total_Count, SUM(Insurance_amount) as Total_Amount FROM Aggregated_insurance WHERE Year={selected_year} AND Quarter={selected_quarter}"
@@ -202,8 +293,8 @@ elif domain == "Insurance":
 
     st.markdown("---")
 
-    # 2. Map View
-    st.subheader(f"Geographical Insurance Breakdown")
+    # 2. State-wise Map View
+    st.subheader("Geographical Insurance Breakdown — State Level")
     map_query = f"SELECT State, SUM(Insurance_amount) as amount FROM Map_insurance WHERE Year={selected_year} AND Quarter={selected_quarter} GROUP BY State"
     map_df = fetch_data(map_query, conn)
     
@@ -222,7 +313,7 @@ elif domain == "Insurance":
         fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0})
         st.plotly_chart(fig, use_container_width=True)
 
-    # 3. Top Performers
+    # 3. Top 10 Districts (across all states)
     st.markdown("---")
     st.subheader("Top 10 Districts for Insurance")
     top_dist_query = f"SELECT EntityName, SUM(Count) as Total_Count, SUM(Amount) as Total_Amount FROM Top_insurance WHERE EntityType='District' AND Year={selected_year} AND Quarter={selected_quarter} GROUP BY EntityName ORDER BY Total_Amount DESC LIMIT 10"
@@ -232,3 +323,46 @@ elif domain == "Insurance":
         fig2 = px.bar(top_dist, x='Total_Amount', y='EntityName', orientation='h', title='Top 10 Districts by Insurance Value', color='Total_Amount', color_continuous_scale="Greens")
         fig2.update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig2, use_container_width=True)
+
+    # 4. District-wise Breakdown by State
+    st.markdown("---")
+    st.subheader("District-wise Insurance Breakdown by State")
+
+    states_df_i = fetch_data(f"SELECT DISTINCT State FROM Map_insurance WHERE Year={selected_year} AND Quarter={selected_quarter} ORDER BY State", conn)
+    if not states_df_i.empty:
+        state_display_names_i = sorted([state_mapping.get(s, s) for s in states_df_i['State'].tolist()])
+        selected_display_state_i = st.selectbox("Select a State to view District breakdown", state_display_names_i, key="ins_state")
+        selected_slug_i = reverse_state_mapping.get(selected_display_state_i, selected_display_state_i)
+
+        dist_query_i = f"""
+            SELECT District, SUM(Insurance_count) as Total_Count, SUM(Insurance_amount) as Total_Amount
+            FROM Map_insurance
+            WHERE Year={selected_year} AND Quarter={selected_quarter} AND State='{selected_slug_i}'
+            GROUP BY District ORDER BY Total_Amount DESC
+        """
+        dist_df_i = fetch_data(dist_query_i, conn)
+
+        if not dist_df_i.empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Districts Covered", len(dist_df_i))
+            with col2:
+                st.metric("Top District", dist_df_i['District'].iloc[0])
+
+            fig_dist_i = px.bar(
+                dist_df_i, x='District', y='Total_Amount',
+                title=f'District-wise Insurance Value — {selected_display_state_i} ({selected_year} Q{selected_quarter})',
+                color='Total_Amount', color_continuous_scale='Greens'
+            )
+            fig_dist_i.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_dist_i, use_container_width=True)
+
+            fig_dist_i2 = px.bar(
+                dist_df_i, x='District', y='Total_Count',
+                title=f'District-wise Insurance Policy Count — {selected_display_state_i} ({selected_year} Q{selected_quarter})',
+                color='Total_Count', color_continuous_scale='Greens'
+            )
+            fig_dist_i2.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig_dist_i2, use_container_width=True)
+        else:
+            st.info("No district data available for the selected state and period.")
